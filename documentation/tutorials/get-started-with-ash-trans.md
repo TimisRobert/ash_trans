@@ -294,10 +294,7 @@ defmodule MyAppWeb.Post.FormComponent do
     form =
       Form.for_create(Post, :create,
         as: "post",
-        forms: [auto?: true],
-        prepare_source: fn changeset ->
-          Ash.Changeset.set_argument(changeset, :locale, current_locale())
-        end
+        forms: [auto?: true]
       )
       |> AshTrans.add_forms(Cldr.AshTrans.locale_names())
 
@@ -308,10 +305,7 @@ defmodule MyAppWeb.Post.FormComponent do
     form =
       Form.for_update(post, :update,
         as: "post",
-        forms: [auto?: true],
-        prepare_source: fn changeset ->
-          Ash.Changeset.set_argument(changeset, :locale, current_locale())
-        end
+        forms: [auto?: true]
       )
       |> AshTrans.add_forms(Cldr.AshTrans.locale_names())
 
@@ -335,7 +329,8 @@ defmodule MyAppWeb.Post.FormComponent do
   end
 
   defp locale_options do
-    Enum.map(Cldr.known_locale_names(), &{Cldr.LocaleDisplay.display_name!(&1), &1})
+    [default_locale() | Cldr.AshTrans.locale_names()]
+    |> Enum.map(&{Cldr.LocaleDisplay.display_name!(&1), &1})
   end
 
   defp notify_parent(msg), do: send(self(), {__MODULE__, msg})
