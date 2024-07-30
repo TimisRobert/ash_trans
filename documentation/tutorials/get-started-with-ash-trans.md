@@ -2,16 +2,22 @@
 
 ## Installation
 
-First, add the dependency to your `mix.exs` file
+Add the dependency to your `mix.exs` file and include `:ash_trans` in your `.formatter.exs`:
 
 ```elixir
+# In mix.exs
 {:ash_trans, "~> 0.1.0"}
+
+# In .formatter.exs
+import_deps: [..., :ash_trans]
 ```
 
-and add `:ash_trans` to your `.formatter.exs`
+If you are using Cldr, add AshTrans to your providers:
 
 ```elixir
-import_deps: [..., :ash_trans]
+use Cldr,
+  providers: [AshTrans],
+  locales: ["it", "en"]
 ```
 
 ## Adding to a resource
@@ -23,24 +29,139 @@ use Ash.Resource,
   extensions: [..., AshTrans.Resource]
 
 translations do
-  # Add public or add :translations to action accept list
+  # Set `public?` to true or add `:translations` to the action's accept list for public access
   public? true
   # Add the fields you want to translate
   fields [:name, :description]
-  # Add the locales, except the default locale
+  # Add the locales, except the default locale since it will be directly on the resource
   locales [:it]
+  # If you are using Cldr
+  locales MyApp.Cldr.AshTrans.locale_names()
 end
 ```
 
-If you are using Cldr, add the provider to your Cldr module:
+## Example usage
+
+First, we need to create a domain:
 
 ```elixir
-use Cldr,
-  providers: [AshTrans],
-  locales: ["it", "en"]
+defmodule MyApp.Domain do
+  use Ash.Domain
+
+  resources do
+    resource MyApp.Post
+  end
+end
 ```
 
-Then use the provider function for a locale list with the default excluded:
+Then let's create a resource for it:
+
+```elixir
+defmodule MyApp.Post do
+  @moduledoc false
+
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshTrans.Resource]
+
+  attributes do
+    uuid_v7_primary_key :id
+    attribute :title, :string, public?: true
+    attribute :body, :string, public?: true
+  end
+
+  actions do
+    defaults [:read, :destroy, update: :*, create: :*]
+  end
+
+  translations do
+    public? true
+    fields [:title, :body]
+    locales [:it]
+  end
+end
+```
+
+With the setup complete, let's explore how to manage translations.
+The extension will define two embedded resources, Translations and Translations.Fields that will look like this:
+
+```elixir
+defmodule MyApp.Post.Translations do
+  use Ash.Resource, data_layer: :embedded
+
+  attributes do
+    attribute :it, MyApp.Post.Translations.Fields
+  end
+end
+
+defmodule MyApp.Post.Translations.Fields do
+  use Ash.Resource, data_layer: :embedded
+
+  attributes do
+    attribute :title, :string, public?: true
+    attribute :body, :string, public?: true
+  end
+end
+```
+
+The extension adds these to the original resource as an attribute:
+
+```elixir
+defmodule MyApp.Post do
+  ...
+  attributes do
+    ...
+    attribute :translations, MyApp.Post.Translations, public?: true
+  end
+  ...
+end
+```
+
+By doing so, we can leverage the Ash framework to do the validation, storage and casting of the translation data.
+
+Now we can use our resource like any other and have translations added by passing a map composed of locale keys and as values another map having the fields we want translated.
+
+```elixir
+post =
+  Ash.Changeset.for_create(MyApp.Post, :create, %{
+    title: "Title",
+    body: "Body",
+    # Like so
+    translations: %{
+      it: %{
+        title: "Titolo",
+        body: "Corpo"
+      }
+    }
+  })
+  |> Ash.create!()
+```
+
+To translate our struct, we can call `translate/2` or to translate just a field and have it returned `translate_field/3`
+
+```elixir
+post_it = AshTrans.translate(post, :it)
+%{title: "Titolo", body: "Corpo"} = post_it
+
+"Titolo" = AshTrans.translate_field(post, :title, :it)
+```
+
+# Full example with Phoenix Liveview, Ash and Cldr
+
+First we need to install and configure Cldr, then add to the Cldr module the AshTrans provider:
+
+```elixir
+defmodule MyApp.Cldr do
+  use Cldr,
+    providers: [AshTrans],
+    locales: ["it", "en"]
+end
+```
+
+This allows us to leverage Cldr for managing available locales and the current locale, rather than handling it manually.
+
+Let's use the resource we have defined above, and replace in translations the locales with:
 
 ```elixir
 translations do
@@ -48,83 +169,215 @@ translations do
 end
 ```
 
-To translate a resource, just do this:
+Now let's create a form to create/update the Post resource:
 
 ```elixir
-# If you have Cldr
-MyApp.Cldr.AshTrans.translate(resource)
-# If you don't have Cldr
-AshTrans.translate(resource, locale)
-```
+defmodule MyAppWeb.Post.FormComponent do
+  @moduledoc false
+  use MyAppWeb, :live_component
 
-You can also translate just a field:
+  alias AshPhoenix.Form
+  alias MyApp.Cldr
+  alias MyApp.Post
 
-```elixir
-# If you have Cldr
-MyApp.Cldr.AshTrans.translate_field(resource, field)
-# If you don't have Cldr
-AshTrans.translate_field(resource, field, locale)
-```
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div class="mt-12">
+      <.simple_form
+        for={@form}
+        id="post-form"
+        phx-target={@myself}
+        phx-change="validate"
+        phx-submit="save"
+      >
+        <.input
+          type="select"
+          label={gettext("Language")}
+          field={@form[:locale]}
+          options={locale_options()}
+        />
+        <.input
+          class={hide_input?(@form[:locale]) && "hidden"}
+          label={gettext("Title")}
+          field={@form[:title]}
+        />
 
-## Using with AshPhoenix
+        <.inputs_for :let={translations} field={@form[:translations]}>
+          <.inputs_for
+            :let={field}
+            :for={locale <- Cldr.AshTrans.locale_names()}
+            field={translations[locale]}
+          >
+            <.input
+              class={hide_translation_input?(@form[:locale], locale) && "hidden"}
+              label={gettext("Title")}
+              field={field[:title]}
+            />
+          </.inputs_for>
+        </.inputs_for>
+        <.input
+          class={hide_input?(@form[:locale]) && "hidden"}
+          type="textarea"
+          label={gettext("Body")}
+          field={@form[:body]}
+        />
 
-To use with AshPhoenix, there is a helper provided to add the required forms:
-
-```elixir
-# Or Form.for_create
-Form.for_update(activity_price_category, :update,
-  # This is necessary, alternatively you can define them manually
-  forms: [auto?: true],
-  prepare_source: fn changeset ->
-    # For the language selection later
-    Ash.Changeset.set_argument(changeset, :locale, MyApp.Cldr.get_locale().cldr_locale_name)
+        <.inputs_for :let={translations} field={@form[:translations]}>
+          <.inputs_for
+            :let={field}
+            :for={locale <- Cldr.AshTrans.locale_names()}
+            field={translations[locale]}
+          >
+            <.input
+              class={hide_translation_input?(@form[:locale], locale) && "hidden"}
+              type="textarea"
+              label={gettext("Body")}
+              field={field[:body]}
+            />
+          </.inputs_for>
+        </.inputs_for>
+      </.simple_form>
+    </div>
+    """
   end
-)
-|> AshTrans.add_forms(locales)
-# If you are using Cldr
-# |> AshTrans.add_forms(Cldr.AshTrans.locale_names())
+
+  @impl true
+  def update(%{post: post} = assigns, socket) do
+    {:ok,
+     socket
+     |> assign(assigns)
+     |> assign_form(assigns.live_action, post)}
+  end
+
+  @impl true
+  def handle_event("validate", %{"post" => params}, socket) do
+    form = Form.validate(socket.assigns.form, params)
+    {:noreply, assign(socket, :form, form)}
+  end
+
+  def handle_event("save", %{"post" => params}, socket) do
+    save_post(socket, socket.assigns.live_action, params)
+  end
+
+  defp save_post(socket, :edit, params) do
+    case Form.submit(socket.assigns.form, params: params) do
+      {:ok, post} ->
+        notify_parent({:saved, post})
+
+        {:noreply,
+         socket
+         |> put_flash(:info, gettext("Post updated successfully"))
+         |> push_patch(to: socket.assigns.patch, replace: true)}
+
+      {:error, form} ->
+        {:noreply, assign(socket, :form, form)}
+    end
+  end
+
+  defp save_post(socket, :new, params) do
+    case Form.submit(socket.assigns.form, params: params) do
+      {:ok, post} ->
+        notify_parent({:saved, post})
+
+        {:noreply,
+         socket
+         |> put_flash(:info, gettext("Post created successfully"))
+         |> push_navigate(to: socket.assigns.patch.(post))}
+
+      {:error, form} ->
+        {:noreply, assign(socket, :form, form)}
+    end
+  end
+
+  defp assign_form(socket, :new, _) do
+    form =
+      Form.for_create(Post, :create,
+        as: "post",
+        forms: [auto?: true],
+        prepare_source: fn changeset ->
+          Ash.Changeset.set_argument(changeset, :locale, current_locale())
+        end
+      )
+      |> AshTrans.add_forms(Cldr.AshTrans.locale_names())
+
+    assign(socket, :form, to_form(form))
+  end
+
+  defp assign_form(socket, :edit, post) do
+    form =
+      Form.for_update(post, :update,
+        as: "post",
+        forms: [auto?: true],
+        prepare_source: fn changeset ->
+          Ash.Changeset.set_argument(changeset, :locale, current_locale())
+        end
+      )
+      |> AshTrans.add_forms(Cldr.AshTrans.locale_names())
+
+    assign(socket, :form, to_form(form))
+  end
+
+  defp hide_input?(field) do
+    field.value && to_string(field.value) != to_string(default_locale())
+  end
+
+  defp hide_translation_input?(field, locale) do
+    !field.value || to_string(field.value) != to_string(locale)
+  end
+
+  defp default_locale do
+    Cldr.default_locale().cldr_locale_name
+  end
+
+  defp current_locale do
+    Cldr.get_locale().cldr_locale_name
+  end
+
+  defp locale_options do
+    Enum.map(Cldr.known_locale_names(), &{Cldr.LocaleDisplay.display_name!(&1), &1})
+  end
+
+  defp notify_parent(msg), do: send(self(), {__MODULE__, msg})
+end
 ```
 
-### Example
+Here we have used the Phoenix `.inputs_for` component to manage the nested embedded resource translations, then when creating the form we used the helper in AshTrans `add_forms/1` to add the necessary forms.
 
-```heex
-<.input
-  type="select"
-  label={gettext("Language")}
-  field={@form[:locale]}
-  options={
-    Enum.map(MyApp.Cldr.known_locale_names(), &{MyApp.Cldr.LocaleDisplay.display_name!(&1), &1})
-  }
-/>
+We use CSS to hide translation inputs rather than conditional rendering to preserve input data when switching languages.
 
-<.input
-  class={hide_input?(@form[:locale]) && "hidden"}
-  label={gettext("Name")}
-  field={@form[:name]}
-/>
+The form component can now be used to create or update posts, along with the translations.
 
-<.inputs_for :let={translations} field={@form[:translations]}>
-  <.inputs_for
-    :let={field}
-    :for={locale <- MyApp.Cldr.AshTrans.locale_names()}
-    field={translations[locale]}
-  >
-    <.input
-      class={hide_translation_input?(@form[:locale], locale) && "hidden"}
-      label={gettext("Name")}
-      field={field[:name]}
-    />
-  </.inputs_for>
-</.inputs_for>
-```
+Now we can make a LiveView to display a post:
 
 ```elixir
-defp hide_input?(field) do
-  field.value &&
-    to_string(field.value) != to_string(MyApp.Cldr.default_locale().cldr_locale_name)
-end
+defmodule MyAppWeb.PostLive.Show do
+  use MyAppWeb, :live_view
 
-defp hide_translation_input?(field, locale) do
-  !field.value || to_string(field.value) != to_string(locale)
+  alias MyApp.Cldr
+  alias MyApp.Post
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <h1>
+      <%= @post.title %>
+    </h1>
+    <p>
+      <%= @post.body %>
+    </p>
+    """
+  end
+
+  @impl true
+  def mount(%{"id" => id}, _session, socket) do
+    post =
+      Ash.get!(Post, id)
+      |> Cldr.AshTrans.translate(post)
+
+    {:ok, socket |> assign(:post, post)}
+  end
 end
 ```
+
+Cldr handles passing the current locale to AshTrans, which can be set using various strategies, such as [Cldr.Plug](https://hexdocs.pm/ex_cldr_plugs/readme.html).
