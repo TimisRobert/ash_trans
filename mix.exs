@@ -1,7 +1,7 @@
 defmodule AshTrans.MixProject do
   use Mix.Project
 
-  @version "0.1.1"
+  @version "0.1.2"
 
   def project do
     [
@@ -72,12 +72,12 @@ defmodule AshTrans.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_cldr, "~> 2.39", only: [:test], optional: true},
+      {:ex_cldr, "~> 2.42.0", only: [:test], optional: true},
       {:ex_doc, github: "elixir-lang/ex_doc", only: [:dev, :test], runtime: false},
       {:credo, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:git_ops, "~> 2.6.1", only: [:dev]},
-      {:ash, "~> 3.2"},
-      {:ash_phoenix, "~> 2.1.0"}
+      {:ash, "~> 3.5.8"},
+      {:ash_phoenix, "~> 2.3.0"}
     ]
   end
 
