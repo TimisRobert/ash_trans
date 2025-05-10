@@ -27,23 +27,25 @@ defmodule AshTrans do
     end
   end
 
-  def add_forms(%{action: :create} = form, locales) do
-    do_add_forms(form, locales)
+  def add_forms(form, locales, path \\ [])
+
+  def add_forms(%{action: :create} = form, locales, path) do
+    do_add_forms(form, locales, path)
   end
 
-  def add_forms(form, locales) do
+  def add_forms(form, locales, path) do
     if form.original_data.translations do
       form
     else
-      do_add_forms(form, locales)
+      do_add_forms(form, locales, path)
     end
   end
 
-  defp do_add_forms(form, locales) do
+  defp do_add_forms(form, locales, path) do
     form = AshPhoenix.Form.add_form(form, :translations)
 
     Enum.reduce(locales, form, fn locale, form ->
-      AshPhoenix.Form.add_form(form, [:translations, locale])
+      AshPhoenix.Form.add_form(form, path ++ [:translations, locale])
     end)
   end
 
