@@ -34,7 +34,9 @@ defmodule AshTrans do
   end
 
   def add_forms(form, locales, path) do
-    if form.original_data.translations do
+    keys = for key <- path ++ [:translations], do: Access.key(key)
+
+    if get_in(form.original_data, keys) do
       form
     else
       do_add_forms(form, locales, path)
@@ -42,7 +44,7 @@ defmodule AshTrans do
   end
 
   defp do_add_forms(form, locales, path) do
-    form = AshPhoenix.Form.add_form(form, :translations)
+    form = AshPhoenix.Form.add_form(form, path ++ [:translations])
 
     Enum.reduce(locales, form, fn locale, form ->
       AshPhoenix.Form.add_form(form, path ++ [:translations, locale])

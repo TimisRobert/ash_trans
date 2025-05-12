@@ -1,4 +1,4 @@
-defmodule AshTrans.Test.Post do
+defmodule AshTrans.Test.Author do
   @moduledoc false
 
   use Ash.Resource,
@@ -8,12 +8,7 @@ defmodule AshTrans.Test.Post do
 
   attributes do
     uuid_v7_primary_key :id
-    attribute :title, :string, public?: true
-    attribute :body, :string, public?: true
-  end
-
-  relationships do
-    belongs_to :author, AshTrans.Test.Author
+    attribute :name, :string, public?: true
   end
 
   actions do
@@ -22,7 +17,7 @@ defmodule AshTrans.Test.Post do
 
   translations do
     public? true
-    fields [:title, :body]
+    fields [:name]
     locales AshTrans.Test.Cldr.AshTrans.locale_names()
   end
 end

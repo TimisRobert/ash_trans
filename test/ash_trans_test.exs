@@ -67,4 +67,12 @@ defmodule AshTrans.Test do
 
     assert %{title: "Title", body: "Corpo"} = AshTrans.Test.Cldr.AshTrans.translate(post)
   end
+
+  test "forms work" do
+    AshPhoenix.Form.for_create(AshTrans.Test.Post, :create,
+      as: "post",
+      forms: [auto?: true]
+    )
+    |> AshTrans.add_forms(AshTrans.Test.Cldr.AshTrans.locale_names())
+  end
 end
