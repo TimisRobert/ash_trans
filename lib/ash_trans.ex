@@ -51,8 +51,22 @@ defmodule AshTrans do
     end)
   end
 
-  def translate(resource, locale) do
-    translations = Map.get(resource.translations || %{}, locale) || %{}
+  def translate(%{translations: translations} = resource, locale)
+      when map_size(translations) > 0 do
+    translations = Map.get(resource.translations, locale) || %{}
+
+    resource =
+      Ash.Resource.Info.relationships(resource)
+      |> Enum.filter(fn
+        %Ash.Resource.Relationships.BelongsTo{} -> false
+        _ -> true
+      end)
+      |> Enum.reduce(resource, fn relationship, resource ->
+        Map.update!(resource, relationship.name, fn
+          field when is_list(field) -> Enum.map(field, &translate(&1, locale))
+          field -> translate(field, locale)
+        end)
+      end)
 
     AshTrans.Resource.Info.translations_fields!(resource)
     |> Enum.reduce(resource, fn field, resource ->
@@ -62,8 +76,17 @@ defmodule AshTrans do
     end)
   end
 
-  def translate_field(resource, field, locale) do
-    translations = Map.get(resource.translations || %{}, locale) || %{}
+  def translate(resource, _locale) do
+    resource
+  end
+
+  def translate_field(%{translations: translations} = resource, field, locale)
+      when map_size(translations) > 0 do
+    translations = Map.get(resource.translations, locale) || %{}
     Map.get(translations, field) || Map.get(resource, field)
+  end
+
+  def translate_field(resource, _field, _locale) do
+    resource
   end
 end

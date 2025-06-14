@@ -68,6 +68,38 @@ defmodule AshTrans.Test do
     assert %{title: "Title", body: "Corpo"} = AshTrans.Test.Cldr.AshTrans.translate(post)
   end
 
+  test "nested relationships get translated" do
+    {:ok, _} = Cldr.put_locale(:it)
+
+    author =
+      Ash.Changeset.for_create(AshTrans.Test.Author, :create, %{
+        name: "Name",
+        translations: %{
+          it: %{
+            name: "Nome"
+          }
+        }
+      })
+      |> Ash.create!()
+
+    Ash.Changeset.for_create(AshTrans.Test.Post, :create, %{
+      title: "Title",
+      body: "Body",
+      translations: %{
+        it: %{
+          body: "Corpo"
+        }
+      }
+    })
+    |> Ash.Changeset.manage_relationship(:author, author, type: :append)
+    |> Ash.create!()
+
+    author = Ash.load!(author, [:posts])
+
+    assert %{name: "Nome", posts: [%{title: "Title", body: "Corpo"}]} =
+             AshTrans.Test.Cldr.AshTrans.translate(author)
+  end
+
   test "forms work" do
     AshPhoenix.Form.for_create(AshTrans.Test.Post, :create,
       as: "post",

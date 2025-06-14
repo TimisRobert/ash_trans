@@ -15,6 +15,10 @@ defmodule AshTrans.Test.Author do
     defaults [:read, :destroy, update: :*, create: :*]
   end
 
+  relationships do
+    has_many :posts, AshTrans.Test.Post
+  end
+
   translations do
     public? true
     fields [:name]
